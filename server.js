@@ -142,8 +142,6 @@ if (process.env.DOCKER_HOST) {
 			  						srv.inspect(function (err, data) {
 			  							if (!err) {
 			  								var prevImg = data.Spec.TaskTemplate.ContainerSpec.Image;
-			  								//console.log(data);
-			  								//res.json(data);
 			  								srv.update(auth,
 					  								getUpdateObject(parseInt(data.Version.Index),req.query.image,data.Spec),
 					  								function (err, data) {
@@ -177,3 +175,30 @@ if (process.env.DOCKER_HOST) {
 	  }
   });
   
+  app.get(ctxRoot + 'imageUpdate',function(req,res){
+	  if (updateToken != req.get('Authorization')) {
+		  res.json({error:'Unauthorized request'});
+	  } else if (req.query.image) {
+		  var auth = {'authconfig':{'key': req.get('X-Registry-Authorization')}};
+		  docker.pull(req.query.image,auth,
+				  function (err, stream) {
+			  		if (!err) {
+			  			docker.modem.followProgress(stream,
+			  				function(err, output) {
+			  					if (!err) {
+			  						res.json({image:req.query.image});
+			  					} else {
+			  						fireError(1,err,res);
+			  					}
+			  				},
+				  			function(event) {
+				  				console.log(event);
+			  				});
+			  		} else {
+			  			fireError(2,err,res);
+			  		}
+			});
+	  } else {
+		  res.json({error:'Missing parameters'});
+	  }
+  });
