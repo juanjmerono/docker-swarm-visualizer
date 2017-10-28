@@ -112,59 +112,64 @@ if (process.env.DOCKER_HOST) {
   } else {
 	  docker = new Docker({socketPath: '/var/run/docker.sock'});
   }
-  
+  var getUpdateObject = function(ver,image,spec) {
+	  var uobj = spec;
+	  uobj.version = ver;
+	  uobj.Labels['com.docker.stack.image'] = image;
+	  uobj.TaskTemplate.ContainerSpec.Image = image;
+	  uobj.TaskTemplate.ForceUpdate = 1;
+	  return uobj;
+  }
+  var fireError = function(id,err,res) {
+	  console.log("Error["+id+"]");
+	  console.log(err);
+	  res.json(err);
+  }
   var updateToken = process.env.API_TOKEN || require('crypto').randomBytes(16).toString("hex");
   if (!process.env.API_TOKEN) { console.log('#RandomApiKey: '+updateToken); }
   app.get(ctxRoot + 'serviceUpdate',function(req,res){
 	  if (updateToken != req.get('Authorization')) {
 		  res.json({error:'Unauthorized request'});
 	  } else if (req.query.service && req.query.image) {
-		  docker.createImage(
-				  {"key": req.get('X-Registry-Authorization')},
-				  {fromImage: req.query.image}, 
+		  var auth = {'authconfig':{'key': req.get('X-Registry-Authorization')}};
+		  docker.pull(req.query.image,auth,
 				  function (err, stream) {
 			  		if (!err) {
-			  			var srv = docker.getService(req.query.service);
-			  			srv.inspect(function (err, data) {
-			  				if (!err) {
-			  					var prevImg = data.Spec.TaskTemplate.ContainerSpec.Image;
-			  					srv.update({"key": req.get('X-Registry-Authorization')},
-			  							   {
-			  						  		"Name": "nodingdesa_noding",
-			  						  		"version": parseInt(data.Version.Index),
-			  						  		"TaskTemplate": {
-			  						  			"ContainerSpec": {
-			  						  				"Image": req.query.image
-			  						  			},
-			  						  			"Resources": {
-			  						  				"Limits": {},
-			  						  				"Reservations": {}
-			  						  			},
-					  						    "RestartPolicy": {
-					  						      "Condition": "any",
-					  						      "MaxAttempts": 0
-					  						    },
-					  						    "Placement": {},
-					  						    "ForceUpdate": 1
-			  						  		}
-			  							   },function (err, data) {
-			  								   if (!err) {
-			  									   res.json({
-			  										   previousImage: prevImg,
-			  										   newImage: req.query.image,
-			  										   response: data
-			  									   });
-			  								   } else {
-			  									   console.log(err);
-			  								   }
-			  							   });
-			  				} else {
-			  					console.log(err);
-			  				}
-			  			});
+			  			docker.modem.followProgress(stream, 
+			  				function(err, output) {
+			  					if (!err) {
+			  						var srv = docker.getService(req.query.service);
+			  						srv.inspect(function (err, data) {
+			  							if (!err) {
+			  								var prevImg = data.Spec.TaskTemplate.ContainerSpec.Image;
+			  								//console.log(data);
+			  								//res.json(data);
+			  								srv.update(auth,
+					  								getUpdateObject(parseInt(data.Version.Index),req.query.image,data.Spec),
+					  								function (err, data) {
+					  								   if (!err) {
+					  									   res.json({
+					  										   previousImage: prevImg,
+					  										   newImage: req.query.image,
+					  										   response: data
+					  									   });
+					  								   } else {
+					  									   fireError(1,err,res);
+					  								   }
+			  										});
+			  							} else {
+			  								fireError(2,err,res);
+			  							}
+			  						});
+					  			} else {
+					  				fireError(3,err,res);
+					  			}
+					  		},
+				  			function(event) {
+				  				console.log(event);
+			  				});
 			  		} else {
-			  			console.log(err);
-			  			res.json(err);
+			  			fireError(4,err,res);
 			  		}
 			});
 	  } else {
