@@ -112,6 +112,7 @@ if (process.env.DOCKER_HOST) {
   } else {
 	  docker = new Docker({socketPath: '/var/run/docker.sock'});
   }
+  var workers = [];
   var getUpdateObject = function(ver,image,spec) {
 	  var uobj = spec;
 	  uobj.version = ver;
@@ -180,24 +181,41 @@ if (process.env.DOCKER_HOST) {
 		  res.json({error:'Unauthorized request'});
 	  } else if (req.query.image) {
 		  var auth = {'authconfig':{'key': req.get('X-Registry-Authorization')}};
-		  docker.pull(req.query.image,auth,
-				  function (err, stream) {
-			  		if (!err) {
-			  			docker.modem.followProgress(stream,
-			  				function(err, output) {
-			  					if (!err) {
-			  						res.json({image:req.query.image});
-			  					} else {
-			  						fireError(1,err,res);
-			  					}
-			  				},
-				  			function(event) {
-				  				console.log(event);
-			  				});
-			  		} else {
-			  			fireError(2,err,res);
-			  		}
-			});
+		  var response = [];
+		  docker.pull(req.query.image,auth)
+		  	.then(function(img){
+		  		response.push({image:req.query.image,node:'manager'});
+		  		workers.forEach(function(wrk, idx, array){
+		  			wrk.pull(req.query.image,auth)
+		  				.then(function(img){
+		  					response.push({image:req.query.image,node:'worker'});
+				  			if (idx === array.length - 1){
+				  				res.json(response);
+				  			}		  					
+		  				})
+		  				.catch(function(err){
+		  					fireError(0,err,res);
+		  				});
+		  		});
+		  		if (workers.length==0) {
+		  			res.json(response);
+		  		}
+		  	})
+		  	.catch(function(err){
+		  		fireError(1,err,res);
+		  	});
+	  } else {
+		  res.json({error:'Missing parameters'});
+	  }
+  });
+
+  app.get(ctxRoot + 'addWorker',function(req,res){
+	  if (updateToken != req.get('Authorization')) {
+		  res.json({error:'Unauthorized request'});
+	  } else if (req.query.host) {
+		  var wdocker = new Docker({host: req.query.host, port: 2376});
+		  workers.push(wdocker);
+		  res.json({worker:req.query.host})
 	  } else {
 		  res.json({error:'Missing parameters'});
 	  }
