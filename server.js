@@ -113,8 +113,8 @@ if (process.env.DOCKER_HOST) {
 	  docker = new Docker({socketPath: '/var/run/docker.sock'});
   }
   
-  var updateToken = process.env.API_TOKEN || '5e73bff191bf0a9c509a31576ee966f9' || require('crypto').randomBytes(16).toString("hex");
-
+  var updateToken = process.env.API_TOKEN || require('crypto').randomBytes(16).toString("hex");
+  if (!process.env.API_TOKEN) { console.log('#RandomApiKey: '+updateToken); }
   app.get(ctxRoot + 'serviceUpdate',function(req,res){
 	  if (updateToken != req.get('Authorization')) {
 		  res.json({error:'Unauthorized request'});
