@@ -133,7 +133,8 @@ if (process.env.DOCKER_HOST) {
 		  res.json({error:'Unauthorized request'});
 	  } else if (req.query.service && req.query.image) {
 		  var auth = {'authconfig':{'key': req.get('X-Registry-Authorization')}};
-		  docker.pull(req.query.image,auth,
+		  var currentAuth = (req.query.image.indexOf('gitlab')>0)?auth:{};
+		  docker.pull(req.query.image,currentAuth,
 				  function (err, stream) {
 			  		if (!err) {
 			  			docker.modem.followProgress(stream, 
@@ -143,7 +144,7 @@ if (process.env.DOCKER_HOST) {
 			  						srv.inspect(function (err, data) {
 			  							if (!err) {
 			  								var prevImg = data.Spec.TaskTemplate.ContainerSpec.Image;
-			  								srv.update(auth,
+			  								srv.update(currentAuth,
 					  								getUpdateObject(parseInt(data.Version.Index),req.query.image,data.Spec),
 					  								function (err, data) {
 					  								   if (!err) {
@@ -181,12 +182,13 @@ if (process.env.DOCKER_HOST) {
 		  res.json({error:'Unauthorized request'});
 	  } else if (req.query.image) {
 		  var auth = {'authconfig':{'key': req.get('X-Registry-Authorization')}};
+		  var currentAuth = (req.query.image.indexOf('gitlab')>0)?auth:{};
 		  var response = [];
-		  docker.pull(req.query.image,auth)
+		  docker.pull(req.query.image,currentAuth)
 		  	.then(function(img){
 		  		response.push({image:req.query.image,node:'manager'});
 		  		workers.forEach(function(wrk, idx, array){
-		  			wrk.pull(req.query.image,auth)
+		  			wrk.pull(req.query.image,currentAuth)
 		  				.then(function(img){
 		  					response.push({image:req.query.image,node:'worker'});
 				  			if (idx === array.length - 1){
@@ -216,6 +218,18 @@ if (process.env.DOCKER_HOST) {
 		  var wdocker = new Docker({host: req.query.host, port: 2376});
 		  workers.push(wdocker);
 		  res.json({worker:req.query.host})
+	  } else {
+		  res.json({error:'Missing parameters'});
+	  }
+  });
+
+  app.get(ctxRoot + 'updateToken',function(req,res){
+	  if (updateToken != req.get('Authorization')) {
+		  res.json({error:'Unauthorized request'});
+	  } else if (req.get('NewAuthorization')) {
+		  updateToken = req.get('NewAuthorization');
+		  console.log('#NewRandomApiKey: '+updateToken);
+		  res.json({token:updateToken,updated:'ok'})
 	  } else {
 		  res.json({error:'Missing parameters'});
 	  }
